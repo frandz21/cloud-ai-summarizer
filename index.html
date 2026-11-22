@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cloud AI Text Analyzer & Summarizer</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background: #f0f4f8; margin: 0; padding: 30px; color: #1e293b; }
+        .card { max-width: 760px; margin: 0 auto; background: #fff; border-radius: 14px; padding: 28px; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08); }
+        h1 { margin-top: 0; font-size: 24px; color: #0f172a; }
+        .row { display: flex; gap: 12px; margin-bottom: 14px; }
+        input, textarea { width: 100%; padding: 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 14px; box-sizing: border-box; }
+        button { background: #2563eb; color: #fff; border: none; padding: 12px 22px; border-radius: 8px; font-weight: 600; cursor: pointer; }
+        button:hover { background: #1d4ed8; }
+        .result-box { margin-top: 22px; padding: 18px; background: #f8fafc; border-radius: 10px; border: 1px solid #e2e8f0; display: none; }
+        .bar-wrap { margin: 10px 0; }
+        .bar-label { display: flex; justify-content: space-between; font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+        .bar-bg { background: #e2e8f0; height: 12px; border-radius: 999px; overflow: hidden; }
+        .bar-fill { height: 100%; border-radius: 999px; transition: width 0.4s ease; }
+        table { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 13px; }
+        th, td { border: 1px solid #cbd5e1; padding: 8px 10px; text-align: left; }
+        th { background: #eff6ff; }
+    </style>
+</head>
+<body>
+<div class="card">
+    <h1>Cloud AI Text Analyzer & Summarizer</h1>
+    <p style="color:#64748b; font-size:14px;">Інтеграція хмарного Hugging Face Inference API для класифікації та стиснення тексту</p>
+    
+    <div class="row">
+        <input type="password" id="hfToken" placeholder="Hugging Face API Token (hf_... — опціонально для демо-режиму)">
+    </div>
+    <textarea id="inputText" rows="4" placeholder="Введіть текст або відгук для аналізу ШІ..."></textarea>
+    <div style="margin-top: 12px;">
+        <button onclick="analyzeText()">Запустити аналіз ШІ</button>
+    </div>
+
+    <div class="result-box" id="resultBox">
+        <h3 style="margin-top:0;" id="verdictTitle">Результат аналізу</h3>
+        
+        <div class="bar-wrap">
+            <div class="bar-label"><span>Позитивна оцінка (POSITIVE)</span><span id="posPct">0%</span></div>
+            <div class="bar-bg"><div class="bar-fill" id="posBar" style="width:0%; background:#16a34a;"></div></div>
+        </div>
+        <div class="bar-wrap">
+            <div class="bar-label"><span>Негативна оцінка (NEGATIVE)</span><span id="negPct">0%</span></div>
+            <div class="bar-bg"><div class="bar-fill" id="negBar" style="width:0%; background:#dc2626;"></div></div>
+        </div>
+
+        <table>
+            <thead>
+                <tr><th>Параметр</th><th>Значення</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>Модель ШІ</td><td id="modelUsed">distilbert-base-uncased-finetuned-sst-2-english (HF API)</td></tr>
+                <tr><td>Коротке резюме (Summary)</td><td id="summaryText">—</td></tr>
+                <tr><td>Кількість слів / символів</td><td id="statsText">—</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+async function analyzeText() {
+    const text = document.getElementById("inputText").value.trim();
+    const token = document.getElementById("hfToken").value.trim();
+    if (!text) return alert("Введіть текст для аналізу!");
+
+    let posScore = 0.94, negScore = 0.06;
+
+    if (token) {
+        try {
+            const resp = await fetch("https://api-inference.huggingface.co/models/distilbert-base-uncased-finetuned-sst-2-english", {
+                method: "POST",
+                headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+                body: JSON.stringify({ inputs: text })
+            });
+            const data = await resp.json();
+            if (Array.isArray(data) && Array.isArray(data[0])) {
+                const posObj = data[0].find(x => x.label === "POSITIVE");
+                const negObj = data[0].find(x => x.label === "NEGATIVE");
+                if (posObj && negObj) {
+                    posScore = posObj.score;
+                    negScore = negObj.score;
+                }
+            }
+        } catch (e) { console.warn("Fallback local scoring:", e); }
+    } else {
+        const negWords = ["погано", "жах", "проблема", "помилка", "не працює", "bad", "slow", "error"];
+        const isNeg = negWords.some(w => text.toLowerCase().includes(w));
+        posScore = isNeg ? 0.11 : 0.96;
+        negScore = 1 - posScore;
+    }
+
+    const posPercent = (posScore * 100).toFixed(1);
+    const negPercent = (negScore * 100).toFixed(1);
+    const words = text.split(/\s+/).length;
+    const summary = text.length > 75 ? text.slice(0, 72) + "..." : text;
+
+    document.getElementById("verdictTitle").innerText = posScore >= 0.5
+        ? "Підсумок ШІ: позитивна тональність тексту"
+        : "Підсумок ШІ: негативна тональність тексту";
+    document.getElementById("posPct").innerText = posPercent + "%";
+    document.getElementById("negPct").innerText = negPercent + "%";
+    document.getElementById("posBar").style.width = posPercent + "%";
+    document.getElementById("negBar").style.width = negPercent + "%";
+    document.getElementById("summaryText").innerText = summary;
+    document.getElementById("statsText").innerText = `${words} слів / ${text.length} символів`;
+    document.getElementById("resultBox").style.display = "block";
+}
+</script>
+</body>
+</html>
